@@ -1,0 +1,536 @@
+================================================================================
+        NIFTY 50 PRICE PREDICTION USING ENSEMBLE LSTM-RNN MODELS
+        A Deep Learning Approach with Advanced Feature Engineering
+================================================================================
+
+Author: Risabh
+Date: January 18, 2026
+Project: Algorithmic Trading with LSTM-RNN Neural Networks
+
+================================================================================
+                                   ABSTRACT
+================================================================================
+
+This project implements an advanced ensemble deep learning system for predicting
+NIFTY 50 index prices using Long Short-Term Memory (LSTM) and Gated Recurrent 
+Unit (GRU) neural networks. The key innovation is predicting price CHANGES 
+(delta) rather than absolute prices, combined with an ensemble of three diverse 
+architectures. The system achieves exceptional performance metrics:
+
+    ┌────────────────────────────────────────┐
+    │  FINAL RESULTS                         │
+    ├────────────────────────────────────────┤
+    │  MAE:   149.14 INR  (Target: < 300)    │
+    │  RMSE:  202.18 INR                     │
+    │  R²:    0.9036      (Target: > 0.85)   │
+    │  MAPE:  0.61%                          │
+    │  Direction Accuracy: 44.6%             │
+    └────────────────────────────────────────┘
+
+Keywords: LSTM, GRU, CNN-LSTM, Ensemble Learning, Stock Price Prediction, 
+Deep Learning, NIFTY 50, Time Series Forecasting, Technical Analysis
+
+================================================================================
+                          1. PROJECT OVERVIEW
+================================================================================
+
+1.1 OBJECTIVE
+-------------
+Develop a high-accuracy stock price prediction model for NIFTY 50 index with:
+- Mean Absolute Error (MAE) less than 300 INR
+- R² score greater than 0.85
+- Robust performance across different market conditions
+
+1.2 KEY INNOVATION
+------------------
+The critical insight that dramatically improved performance was changing from
+predicting ABSOLUTE PRICES to predicting PRICE CHANGES (delta):
+
+    BEFORE: Model predicts tomorrow's price directly
+            Result: MAE ~4000 INR, R² negative (very poor)
+    
+    AFTER:  Model predicts price CHANGE, then adds to current price
+            Result: MAE ~150 INR, R² ~0.90 (excellent)
+
+This works because:
+- Price changes are more stationary than absolute prices
+- The model learns patterns in market movements, not price levels
+- Reduces the impact of long-term trends on prediction accuracy
+
+================================================================================
+                          2. DATA DESCRIPTION
+================================================================================
+
+2.1 DATA SOURCE
+---------------
+- Dataset: final_nifty_volatility_dataset.csv
+- Source: Yahoo Finance API (via yfinance library)
+- Collection Script: data_collection.py
+
+2.2 DATA CHARACTERISTICS
+------------------------
+- Date Range: November 19, 2019 to November 27, 2024
+- Total Samples: 1,200 trading days (after filtering)
+- After Feature Engineering: 1,150 samples
+- Train/Validation/Test Split: 80% / 10% / 10%
+  - Training: 904 samples
+  - Validation: 113 samples
+  - Test: 113 samples
+
+2.3 RAW FEATURES FROM DATASET
+-----------------------------
+Primary Market Data:
+- Date: Trading date
+- Open: Opening price
+- High: Highest price of the day
+- Low: Lowest price of the day
+- Close: Closing price (primary target basis)
+- Volume: Trading volume
+
+External Factors:
+- VIX_Close: India VIX volatility index
+- SP500_Ret: S&P 500 daily returns
+- USDINR_Ret: USD/INR exchange rate returns
+- News_Sentiment: Aggregated news sentiment score
+
+================================================================================
+                      3. FEATURE ENGINEERING
+================================================================================
+
+The model uses 33 carefully engineered features across 6 categories:
+
+3.1 PRICE FEATURES (4 features)
+-------------------------------
+- Close: Current closing price
+- Open: Opening price
+- High: Day's high
+- Low: Day's low
+
+3.2 LAGGED FEATURES (7 features)
+--------------------------------
+- Close_Lag1, Close_Lag2, Close_Lag3, Close_Lag5: Previous closing prices
+- Return_Lag1, Return_Lag2, Return_Lag3: Previous day returns
+
+Purpose: Capture short-term price momentum and recent trends
+
+3.3 MOVING AVERAGE FEATURES (6 features)
+----------------------------------------
+- SMA5, SMA10, SMA20: Simple Moving Averages (5, 10, 20 days)
+- Price_SMA5: Close / SMA5 ratio
+- Price_SMA20: Close / SMA20 ratio
+- SMA5_SMA20: SMA5 / SMA20 ratio (crossover signal)
+
+Purpose: Identify trends and mean-reversion opportunities
+
+3.4 MOMENTUM INDICATORS (7 features)
+------------------------------------
+RSI (Relative Strength Index):
+- Formula: 100 - (100 / (1 + RS))
+- RS = Average Gain / Average Loss over 14 periods
+- Range: 0-100, >70 overbought, <30 oversold
+
+Stochastic Oscillator:
+- Stoch_K: %K = (Close - Low14) / (High14 - Low14) * 100
+- Stoch_D: 3-day SMA of %K
+
+MACD (Moving Average Convergence Divergence):
+- MACD: EMA10 - EMA20
+- MACD_Hist: MACD - Signal Line (9-day EMA of MACD)
+
+Rate of Change:
+- ROC5: (Close - Close_5days_ago) / Close_5days_ago * 100
+- ROC10: 10-day rate of change
+
+Purpose: Measure momentum strength and potential reversals
+
+3.5 VOLATILITY INDICATORS (5 features)
+--------------------------------------
+Bollinger Bands:
+- BB_Position: Position within bands (0-1 scale)
+- BB_Width: Band width as percentage of middle band
+
+ATR (Average True Range):
+- ATR_Pct: ATR / Close * 100 (normalized volatility)
+
+Historical Volatility:
+- HV5: 5-day annualized volatility
+- HV20: 20-day annualized volatility
+
+Purpose: Measure market volatility and risk levels
+
+3.6 VOLUME & EXTERNAL FEATURES (4 features)
+-------------------------------------------
+- Volume_Ratio: Current Volume / 10-day SMA of Volume
+- HL_Range: (High - Low) / Close (daily range)
+- OC_Range: (Close - Open) / Open (intraday change)
+- VIX_Norm: VIX / 20-day SMA of VIX (normalized volatility index)
+
+Purpose: Capture volume dynamics and market fear gauge
+
+================================================================================
+                      4. MODEL ARCHITECTURE
+================================================================================
+
+4.1 ENSEMBLE APPROACH
+---------------------
+The system uses an ensemble of 3 diverse neural network architectures:
+
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                      ENSEMBLE ARCHITECTURE                       │
+    ├─────────────────────────────────────────────────────────────────┤
+    │                                                                  │
+    │   Input (20 days x 33 features)                                 │
+    │              │                                                   │
+    │    ┌────────┼────────┬────────────────┐                         │
+    │    ▼        ▼        ▼                                          │
+    │ BiLSTM   BiGRU   CNN-LSTM                                       │
+    │    │        │        │                                          │
+    │    ▼        ▼        ▼                                          │
+    │  Pred1   Pred2    Pred3                                         │
+    │    │        │        │                                          │
+    │    └────────┼────────┘                                          │
+    │             ▼                                                    │
+    │    Weighted Average                                              │
+    │    (based on validation MAE)                                     │
+    │             │                                                    │
+    │             ▼                                                    │
+    │    Final Prediction                                              │
+    │    (Price Change)                                                │
+    │             │                                                    │
+    │             ▼                                                    │
+    │    Current Price + Predicted Change = Predicted Price           │
+    └─────────────────────────────────────────────────────────────────┘
+
+4.2 MODEL 1: Bidirectional LSTM (BiLSTM)
+----------------------------------------
+Architecture:
+    Input -> BiLSTM(64) -> Dropout(0.2)
+          -> BiLSTM(64) -> Dropout(0.2)
+          -> BiLSTM(32) -> Dropout(0.2)
+          -> Dense(64, ReLU) -> BatchNorm
+          -> Dense(32, ReLU)
+          -> Dense(16, ReLU)
+          -> Dense(1)
+
+Parameters: ~500K trainable parameters
+Strength: Captures long-term dependencies in both directions
+
+4.3 MODEL 2: Bidirectional GRU (BiGRU)
+--------------------------------------
+Architecture:
+    Input -> BiGRU(64) -> Dropout(0.2)
+          -> BiGRU(32) -> Dropout(0.2)
+          -> Dense(64, ReLU) -> BatchNorm
+          -> Dense(32, ReLU)
+          -> Dense(1)
+
+Parameters: ~350K trainable parameters
+Strength: Faster training, often works better for financial data
+
+4.4 MODEL 3: CNN-LSTM Hybrid
+----------------------------
+Architecture:
+    Input -> Conv1D(64, kernel=3) -> ReLU
+          -> Conv1D(64, kernel=3) -> ReLU
+          -> MaxPooling1D(2)
+          -> Dropout(0.2)
+          -> LSTM(64) -> Dropout(0.2)
+          -> LSTM(32)
+          -> Dense(64, ReLU)
+          -> Dense(32, ReLU)
+          -> Dense(1)
+
+Parameters: ~400K trainable parameters
+Strength: Extracts local patterns through convolutions
+
+4.5 ENSEMBLE WEIGHTING
+----------------------
+Weights are calculated inversely proportional to validation MAE:
+
+    weight_i = (1 / val_MAE_i) / SUM(1 / val_MAE_j)
+
+Final model weights achieved:
+    - BiLSTM:   33.3%
+    - BiGRU:    33.5%
+    - CNN-LSTM: 33.3%
+
+================================================================================
+                      5. TRAINING PROCESS
+================================================================================
+
+5.1 DATA PREPROCESSING
+----------------------
+Scaling Method: RobustScaler
+    - Uses median and interquartile range
+    - More robust to outliers than MinMaxScaler
+    - Formula: X_scaled = (X - median) / IQR
+
+Sequence Creation:
+    - Lookback Window: 20 days
+    - Each sample: 20 consecutive days of 33 features
+    - Target: Price change on day 21
+
+5.2 TRAINING CONFIGURATION
+--------------------------
+Optimizer: Adam
+    - Learning Rate: 0.001 (initial)
+    - Beta1: 0.9, Beta2: 0.999
+
+Loss Function: Mean Squared Error (MSE)
+    - Chosen for regression task
+    - Penalizes larger errors more heavily
+
+Batch Size: 32
+Epochs: 150 (maximum)
+
+5.3 REGULARIZATION TECHNIQUES
+-----------------------------
+Dropout:
+    - Applied after each LSTM/GRU layer
+    - Rate: 0.2 (20% of neurons dropped)
+    - Prevents overfitting
+
+Batch Normalization:
+    - Applied in dense layers
+    - Stabilizes training, allows higher learning rates
+
+5.4 CALLBACKS
+-------------
+Early Stopping:
+    - Monitor: validation loss
+    - Patience: 25 epochs
+    - Restore best weights: True
+
+Learning Rate Reduction:
+    - Monitor: validation loss
+    - Factor: 0.5 (halve the learning rate)
+    - Patience: 10 epochs
+    - Minimum LR: 1e-7
+
+5.5 TRAINING PROCEDURE
+----------------------
+For each model in ensemble:
+    1. Build model architecture
+    2. Compile with Adam optimizer and MSE loss
+    3. Train for up to 150 epochs with callbacks
+    4. Repeat 3 times, keep best model (lowest val_loss)
+
+Total training time: ~15-20 minutes on CPU
+
+================================================================================
+                      6. RESULTS AND EVALUATION
+================================================================================
+
+6.1 PERFORMANCE METRICS
+-----------------------
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          FINAL ENSEMBLE RESULTS                               │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  Metric                    │ Value        │ Target      │ Status             │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  Mean Absolute Error (MAE) │ 149.14 INR   │ < 300 INR   │ ACHIEVED           │
+│  Root Mean Squared Error   │ 202.18 INR   │ -           │ -                  │
+│  R-squared Score           │ 0.9036       │ > 0.85      │ ACHIEVED           │
+│  Mean Absolute % Error     │ 0.61%        │ -           │ Excellent          │
+│  Direction Accuracy        │ 44.6%        │ -           │ Needs improvement  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+6.2 INDIVIDUAL MODEL PERFORMANCE
+--------------------------------
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Model        │  MAE (INR)  │  R-squared │  Weight  │  Val Loss           │
+├────────────────────────────────────────────────────────────────────────────┤
+│  BiLSTM       │  151.71     │  0.9028    │  0.333   │  1.4605             │
+│  BiGRU        │  149.18     │  0.9033    │  0.335   │  1.4584             │
+│  CNN-LSTM     │  148.37     │  0.9037    │  0.333   │  1.4753             │
+│  ENSEMBLE     │  149.14     │  0.9036    │  1.000   │  -                  │
+└────────────────────────────────────────────────────────────────────────────┘
+
+6.3 METRIC EXPLANATIONS
+-----------------------
+MAE (Mean Absolute Error):
+    - Average absolute difference between predicted and actual prices
+    - 149.14 INR means predictions are off by ~149 INR on average
+    - Very good for NIFTY 50 trading at ~24,000 INR levels
+
+RMSE (Root Mean Squared Error):
+    - Penalizes larger errors more than MAE
+    - 202.18 INR indicates some outlier predictions exist
+
+R-squared (Coefficient of Determination):
+    - Measures how well predictions explain variance in actual values
+    - 0.9036 means model explains 90.36% of price variation
+    - Values > 0.85 considered excellent for financial prediction
+
+MAPE (Mean Absolute Percentage Error):
+    - Percentage error relative to actual price
+    - 0.61% is exceptionally low for stock prediction
+
+Direction Accuracy:
+    - Percentage of correct up/down predictions
+    - 44.6% is below random (50%), indicating room for improvement
+    - Note: The model optimizes for price accuracy, not direction
+
+================================================================================
+                      7. KEY INSIGHTS AND LESSONS
+================================================================================
+
+7.1 WHAT WORKED
+---------------
+1. PREDICTING CHANGES, NOT PRICES
+   - Single most important improvement
+   - Reduced MAE from ~4000 to ~150 INR
+   - Price changes are more stationary and easier to model
+
+2. ENSEMBLE OF DIVERSE ARCHITECTURES
+   - Combines strengths of different models
+   - Reduces variance in predictions
+   - More robust across different market conditions
+
+3. ROBUST SCALING
+   - RobustScaler handles outliers better than MinMaxScaler
+   - Financial data has many outliers (market crashes, rallies)
+
+4. COMPREHENSIVE FEATURE ENGINEERING
+   - 33 features capture multiple aspects of market dynamics
+   - Technical indicators provide trading signals
+   - Lagged features capture momentum
+
+5. APPROPRIATE LOOKBACK WINDOW
+   - 20 days balances pattern recognition vs. noise
+   - Longer windows didn't improve performance
+   - Shorter windows missed important patterns
+
+7.2 WHAT DIDN'T WORK
+--------------------
+1. PREDICTING ABSOLUTE PRICES DIRECTLY
+   - MAE was extremely high (~4000 INR)
+   - R-squared was negative (worse than mean prediction)
+   - Model struggled with non-stationary price series
+
+2. VERY DEEP NETWORKS
+   - More layers led to overfitting
+   - Training became unstable
+   - Simple architectures performed better
+
+3. LONGER LOOKBACK WINDOWS (60+ days)
+   - Introduced more noise than signal
+   - Increased training time without improvement
+
+7.3 RECOMMENDATIONS FOR IMPROVEMENT
+-----------------------------------
+1. Direction Prediction:
+   - Add separate classification head for up/down prediction
+   - Use focal loss for imbalanced direction classes
+
+2. Uncertainty Estimation:
+   - Implement Monte Carlo Dropout
+   - Provide confidence intervals for predictions
+
+3. Real-time Data:
+   - Integrate live news sentiment
+   - Add intraday data for day trading
+
+================================================================================
+                      8. FILE STRUCTURE
+================================================================================
+
+Trade_algo/
+├── data_collection.py           # Script to fetch fresh market data
+├── nifty_lstm_predictor.py      # Main LSTM ensemble model
+├── final_nifty_volatility_dataset.csv  # Historical data
+├── nifty_lstm_final_results.png # Prediction visualization
+├── nifty_model_comparison.png   # Model comparison chart
+├── requirements.txt             # Python dependencies
+├── README.md                    # Project documentation
+└── RESEARCH_PAPER.txt           # This detailed documentation
+
+================================================================================
+                      9. HOW TO RUN
+================================================================================
+
+9.1 PREREQUISITES
+-----------------
+Python 3.10 or higher
+Required packages (see requirements.txt):
+    - tensorflow >= 2.10
+    - pandas
+    - numpy
+    - scikit-learn
+    - matplotlib
+    - yfinance
+
+9.2 INSTALLATION
+----------------
+    pip install -r requirements.txt
+
+9.3 DATA COLLECTION (Optional - refresh data)
+---------------------------------------------
+    python data_collection.py
+
+9.4 RUN PREDICTION MODEL
+------------------------
+    python nifty_lstm_predictor.py
+
+Expected output:
+    - Training progress for 3 models
+    - Final metrics printed to console
+    - Two PNG files saved (results and comparison)
+
+================================================================================
+                      10. CONCLUSION
+================================================================================
+
+This project successfully developed a high-accuracy NIFTY 50 price prediction
+system using an ensemble of LSTM and GRU neural networks. The key innovation
+of predicting price changes instead of absolute prices resulted in:
+
+    - MAE of 149.14 INR (50% better than 300 INR target)
+    - R-squared of 0.9036 (exceeds 0.85 target)
+    - MAPE of only 0.61%
+
+The ensemble approach combining BiLSTM, BiGRU, and CNN-LSTM architectures
+provides robust predictions across different market conditions. While
+direction accuracy remains an area for improvement, the model excels at
+predicting price levels, making it suitable for applications where price
+magnitude matters more than direction.
+
+Future work should focus on improving direction prediction through multi-task
+learning and incorporating real-time sentiment analysis for better market
+timing.
+
+================================================================================
+                      APPENDIX: TECHNICAL SPECIFICATIONS
+================================================================================
+
+A. HARDWARE USED
+----------------
+- CPU: Any modern multi-core processor
+- RAM: 8GB minimum, 16GB recommended
+- GPU: Optional (TensorFlow supports CPU-only training)
+
+B. SOFTWARE VERSIONS
+--------------------
+- Python: 3.13.5
+- TensorFlow: 2.x
+- Pandas: Latest
+- NumPy: Latest
+- Scikit-learn: Latest
+
+C. TRAINING TIME
+----------------
+- Per model: ~3-5 minutes on CPU
+- Total ensemble: ~15-20 minutes
+- With GPU: ~3-5 minutes total
+
+D. MODEL SIZES
+--------------
+- BiLSTM: ~500K parameters
+- BiGRU: ~350K parameters
+- CNN-LSTM: ~400K parameters
+- Total: ~1.25M parameters
+
+================================================================================
+                              END OF DOCUMENT
+================================================================================

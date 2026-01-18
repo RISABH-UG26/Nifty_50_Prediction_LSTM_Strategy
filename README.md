@@ -1,4 +1,4 @@
-﻿#  NIFTY 50 Price Prediction: 4 LSTM Approaches Comparison
+﻿0#  NIFTY 50 Price Prediction: 4 LSTM Approaches Comparison
 
 [![Python 3.13](https://img.shields.io/badge/Python-3.13.5-blue.svg)](https://www.python.org/)
 [![TensorFlow](https://img.shields.io/badge/TensorFlow-2.x-orange.svg)](https://www.tensorflow.org/)
