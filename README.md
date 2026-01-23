@@ -168,10 +168,14 @@ The model generates two visualization files:
 - Error distribution histogram
 - Scatter plot of predictions
 
+![Prediction Results](nifty_lstm_final_results.png)
+
 ### 2. Model Comparison (`nifty_model_comparison.png`)
 - MAE comparison bar chart
 - Target line at 300 INR
 - Individual vs Ensemble performance
+
+![Model Comparison](nifty_model_comparison.png)
 
 ---
 
